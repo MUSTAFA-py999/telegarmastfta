@@ -6,7 +6,7 @@ from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, PollH
 from flask import Flask
 from threading import Thread
 
-# --- إعداد السيرفر الوهمي (لإبقاء البوت حياً على Render) ---
+# --- إعداد السيرفر الوهمي ---
 app = Flask('')
 
 @app.route('/')
@@ -20,7 +20,7 @@ def run():
 def keep_alive():
     t = Thread(target=run)
     t.start()
-# -----------------------------------------------------------
+# ---------------------------
 
 # القائمة الثابتة
 FIXED_OPTIONS = [
@@ -37,78 +37,104 @@ logging.basicConfig(
     level=logging.INFO
 )
 
-polls_data = {}
-vote_counts = {name: 0 for name in FIXED_OPTIONS}
-current_summary_msg = None
+chats_data = {} 
+poll_ownership = {}
 
 async def send_polls_with_summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global current_summary_msg, vote_counts, polls_data
-    
     if not update.message or not update.message.text:
         return
 
     question = update.message.text
     chat_id = update.effective_chat.id
     
-    vote_counts = {name: 0 for name in FIXED_OPTIONS}
-    polls_data = {} 
+    chats_data[chat_id] = {
+        'votes': {name: 0 for name in FIXED_OPTIONS},
+        'poll_map': {},
+        'msg': None,
+        'original_question': question
+    }
     
-    # --- التعديل الأول: جعل النص هو السؤال فقط ---
-    # تم تغيير النص ليظهر السؤال بخط عريض، وتحته كلمة (النتائج)
-    summary_text = f"**{question}**\n\n(جاري تجميع الأصوات...)"
-    current_summary_msg = await context.bot.send_message(chat_id=chat_id, text=summary_text, parse_mode="Markdown")
+    # --- التعديل الجمالي 1: إضافة خط فاصل سميك ---
+    summary_text = f"📊 **{question}**\n━━━━━━━━━━━━━━━━━\n(جاري تجميع الأصوات...)"
+    
+    sent_msg = await context.bot.send_message(chat_id=chat_id, text=summary_text, parse_mode="Markdown")
+    chats_data[chat_id]['msg'] = sent_msg
 
     chunk_size = 10
     chunks = [FIXED_OPTIONS[i:i + chunk_size] for i in range(0, len(FIXED_OPTIONS), chunk_size)]
 
     for index, chunk in enumerate(chunks):
-        # --- التعديل الثاني: إلغاء كلمة (قائمة 1) ---
-        # نرسل question فقط بدون أي إضافات
+        # القائمة الأولى تأخذ السؤال، والباقي سهم
+        if index == 0:
+            poll_text = question
+        else:
+            poll_text = "⬇️"
+
         message = await context.bot.send_poll(
             chat_id=chat_id,
-            question=question, 
+            question=poll_text, 
             options=chunk,
             is_anonymous=True,
             allows_multiple_answers=False
         )
-        polls_data[message.poll.id] = chunk
+        
+        poll_id = message.poll.id
+        poll_ownership[poll_id] = chat_id
+        chats_data[chat_id]['poll_map'][poll_id] = chunk
+        
         await asyncio.sleep(1)
 
 async def update_score_board(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global vote_counts
     poll = update.poll
     poll_id = poll.id
     
-    if poll_id not in polls_data:
+    chat_id = poll_ownership.get(poll_id)
+    if not chat_id or chat_id not in chats_data:
         return
 
-    options_names = polls_data[poll_id]
+    chat_info = chats_data[chat_id]
+    
+    if poll_id not in chat_info['poll_map']:
+        return
+        
+    options_names = chat_info['poll_map'][poll_id]
     
     for i, option in enumerate(poll.options):
         name = options_names[i]
-        vote_counts[name] = option.voter_count
+        chat_info['votes'][name] = option.voter_count
     
-    sorted_votes = sorted(vote_counts.items(), key=lambda item: item[1], reverse=True)
+    sorted_votes = sorted(chat_info['votes'].items(), key=lambda item: item[1], reverse=True)
     active_votes = [item for item in sorted_votes if item[1] > 0]
 
-    # --- التعديل الثالث: تحديث النص ليبقى السؤال فقط ---
-    # نستخدم poll.question لنضمن بقاء السؤال كما هو في الأعلى
-    text = f"**{poll.question}**\n\n"
+    original_q = chat_info['original_question']
+    
+    # --- التعديل الجمالي 2: تنسيق النتائج مع الخط الفاصل ---
+    text = f"📊 **{original_q}**\n━━━━━━━━━━━━━━━━━\n"
     
     if not active_votes:
         text += "(لم يصوت أحد بعد)"
     else:
         rank = 1
         for name, count in active_votes:
-            icon = "🥇" if rank == 1 else "🥈" if rank == 2 else "🥉" if rank == 3 else f"#{rank}"
-            text += f"{icon} **{name}**: {count}\n"
+            # تمييز المراكز الثلاثة الأولى
+            if rank == 1:
+                icon = "🥇"
+            elif rank == 2:
+                icon = "🥈"
+            elif rank == 3:
+                icon = "🥉"
+            else:
+                icon = f"▫️ {rank}." # شكل أجمل للمراتب الباقية
+            
+            text += f"{icon} {name} ⟵ ({count})\n"
             rank += 1
             
     try:
-        if current_summary_msg:
+        scoreboard_msg = chat_info['msg']
+        if scoreboard_msg:
             await context.bot.edit_message_text(
-                chat_id=current_summary_msg.chat_id,
-                message_id=current_summary_msg.message_id,
+                chat_id=chat_id,
+                message_id=scoreboard_msg.message_id,
                 text=text,
                 parse_mode="Markdown"
             )
@@ -120,12 +146,15 @@ if __name__ == '__main__':
     
     TOKEN = os.environ.get("TOKEN")
     if not TOKEN:
-        print("Error: TOKEN is not set!")
+        print("Error: TOKEN is missing!")
     else:
         application = ApplicationBuilder().token(TOKEN).build()
-        msg_handler = MessageHandler(filters.TEXT & (~filters.COMMAND), send_polls_with_summary)
+        
+        msg_handler = MessageHandler(filters.TEXT & (~filters.COMMAND) & (~filters.UpdateType.EDITED_MESSAGE), send_polls_with_summary)
         poll_handler = PollHandler(update_score_board)
+        
         application.add_handler(msg_handler)
         application.add_handler(poll_handler)
+        
         print("Bot is running...")
         application.run_polling()
