@@ -14,7 +14,6 @@ def home():
     return "Bot is running!"
 
 def run():
-    # Render يعطينا بورت تلقائي، نستخدمه هنا
     port = int(os.environ.get("PORT", 8080))
     app.run(host='0.0.0.0', port=port)
 
@@ -54,17 +53,20 @@ async def send_polls_with_summary(update: Update, context: ContextTypes.DEFAULT_
     vote_counts = {name: 0 for name in FIXED_OPTIONS}
     polls_data = {} 
     
-    summary_text = f"📊 **النتائج المباشرة:** {question}\n\n(بانتظار التصويت...)"
+    # --- التعديل الأول: جعل النص هو السؤال فقط ---
+    # تم تغيير النص ليظهر السؤال بخط عريض، وتحته كلمة (النتائج)
+    summary_text = f"**{question}**\n\n(جاري تجميع الأصوات...)"
     current_summary_msg = await context.bot.send_message(chat_id=chat_id, text=summary_text, parse_mode="Markdown")
 
     chunk_size = 10
     chunks = [FIXED_OPTIONS[i:i + chunk_size] for i in range(0, len(FIXED_OPTIONS), chunk_size)]
 
     for index, chunk in enumerate(chunks):
-        part_text = f" (قائمة {index + 1})"
+        # --- التعديل الثاني: إلغاء كلمة (قائمة 1) ---
+        # نرسل question فقط بدون أي إضافات
         message = await context.bot.send_poll(
             chat_id=chat_id,
-            question=question + part_text,
+            question=question, 
             options=chunk,
             is_anonymous=True,
             allows_multiple_answers=False
@@ -89,7 +91,10 @@ async def update_score_board(update: Update, context: ContextTypes.DEFAULT_TYPE)
     sorted_votes = sorted(vote_counts.items(), key=lambda item: item[1], reverse=True)
     active_votes = [item for item in sorted_votes if item[1] > 0]
 
-    text = "📊 **النتائج المباشرة (محدثة):**\n\n"
+    # --- التعديل الثالث: تحديث النص ليبقى السؤال فقط ---
+    # نستخدم poll.question لنضمن بقاء السؤال كما هو في الأعلى
+    text = f"**{poll.question}**\n\n"
+    
     if not active_votes:
         text += "(لم يصوت أحد بعد)"
     else:
@@ -111,18 +116,16 @@ async def update_score_board(update: Update, context: ContextTypes.DEFAULT_TYPE)
         pass
 
 if __name__ == '__main__':
-    # تشغيل السيرفر الوهمي أولاً
     keep_alive()
     
-    # جلب التوكن من إعدادات الموقع (للحماية)
     TOKEN = os.environ.get("TOKEN")
     if not TOKEN:
-        print("Error: TOKEN is not set in environment variables!")
+        print("Error: TOKEN is not set!")
     else:
         application = ApplicationBuilder().token(TOKEN).build()
         msg_handler = MessageHandler(filters.TEXT & (~filters.COMMAND), send_polls_with_summary)
         poll_handler = PollHandler(update_score_board)
         application.add_handler(msg_handler)
         application.add_handler(poll_handler)
-        print("Bot is running on Render...")
+        print("Bot is running...")
         application.run_polling()
