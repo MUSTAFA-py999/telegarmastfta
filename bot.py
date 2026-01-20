@@ -22,13 +22,16 @@ def keep_alive():
     t.start()
 # ---------------------------
 
-# القائمة الثابتة
+# القائمة الثابتة (بعد التعديل)
 FIXED_OPTIONS = [
-    "مصطفى شامل", "محمد حارث", "هند", "زمزم", "طيبة",  "محمود", "محمد اثير", "كفاح",  "عبد الرحمن احمد", "مصطفى عمر",  "عبد الوهاب", "مصطفى محمد حازم", "عبدالله", "فنر", "سراج", "عبد الرحمن زياد", "ديمة"
+    "مصطفى شامل", "محمد حارث", "هند", "زمزم", "طيبة", "محمود", 
+    "محمد اثير", "كفاح", "عبد الرحمن احمد", "مصطفى عمر", "عبد الوهاب", 
+    "مصطفى محمد حازم", "عبدالله", "فنر", "سراج", "عبد الرحمن زياد", "ديمة"
 ]
 
+# --- تصحيح الخطأ هنا (إضافة الفاصلة) ---
 logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', # <--- تمت إضافة الفاصلة هنا
     level=logging.INFO
 )
 
@@ -49,7 +52,7 @@ async def send_polls_with_summary(update: Update, context: ContextTypes.DEFAULT_
         'original_question': question
     }
     
-    # --- التعديل الجمالي 1: إضافة خط فاصل سميك ---
+    # تنسيق الرسالة مع الخط الفاصل
     summary_text = f"📊 **{question}**\n━━━━━━━━━━━━━━━━━\n(جاري تجميع الأصوات...)"
     
     sent_msg = await context.bot.send_message(chat_id=chat_id, text=summary_text, parse_mode="Markdown")
@@ -103,7 +106,7 @@ async def update_score_board(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     original_q = chat_info['original_question']
     
-    # --- التعديل الجمالي 2: تنسيق النتائج مع الخط الفاصل ---
+    # تنسيق النتائج
     text = f"📊 **{original_q}**\n━━━━━━━━━━━━━━━━━\n"
     
     if not active_votes:
@@ -111,7 +114,6 @@ async def update_score_board(update: Update, context: ContextTypes.DEFAULT_TYPE)
     else:
         rank = 1
         for name, count in active_votes:
-            # تمييز المراكز الثلاثة الأولى
             if rank == 1:
                 icon = "🥇"
             elif rank == 2:
@@ -119,7 +121,7 @@ async def update_score_board(update: Update, context: ContextTypes.DEFAULT_TYPE)
             elif rank == 3:
                 icon = "🥉"
             else:
-                icon = f"▫️ {rank}." # شكل أجمل للمراتب الباقية
+                icon = f"▫️ {rank}." 
             
             text += f"{icon} {name} ⟵ ({count})\n"
             rank += 1
@@ -153,4 +155,3 @@ if __name__ == '__main__':
         
         print("Bot is running...")
         application.run_polling()
-
